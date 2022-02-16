@@ -51,39 +51,46 @@ const gitlabApi = new Gitlab({
 const MyOctokit = GitHubApi.plugin(throttling);
 
 // Create a GitHub API object
-const githubApi = new MyOctokit({
-  previews: settings.useIssueImportAPI ? ['golden-comet'] : [],
-  debug: false,
-  baseUrl: settings.github.apiUrl
-    ? settings.github.apiUrl
-    : 'https://api.github.com',
-  timeout: 5000,
-  headers: {
-    'user-agent': 'node-gitlab-2-github', // GitHub is happy with a unique user agent
-    accept: 'application/vnd.github.v3+json',
-  },
-  auth: 'token ' + settings.github.token,
-  throttle: {
-    onRateLimit: async (retryAfter, options) => {
-      console.log(
-        `Request quota exhausted for request ${options.method} ${options.url}`
-      );
-      await sleep(60000);
-      return true;
-    },
-    onAbuseLimit: async (retryAfter, options) => {
-      console.log(
-        `Abuse detected for request ${options.method} ${options.url}`
-      );
-      await sleep(60000);
-      return true;
-    },
-  },
-});
+const githubApis = settings.github.tokens.reduce(
+  (apis, token) => (
+    (apis[token.owner] = new MyOctokit({
+      previews: settings.useIssueImportAPI ? ['golden-comet'] : [],
+      debug: false,
+      baseUrl: settings.github.apiUrl
+        ? settings.github.apiUrl
+        : 'https://api.github.com',
+      timeout: 5000,
+      headers: {
+        'user-agent': 'node-gitlab-2-github', // GitHub is happy with a unique user agent
+        accept: 'application/vnd.github.v3+json',
+      },
+      auth: 'token ' + token.value,
+      throttle: {
+        onRateLimit: async (retryAfter, options) => {
+          console.log(
+            `Request quota exhausted for request ${options.method} ${options.url}`
+          );
+          await sleep(60000);
+          return true;
+        },
+        onAbuseLimit: async (retryAfter, options) => {
+          console.log(
+            `Abuse detected for request ${options.method} ${options.url}`,
+            token.owner
+          );
+          await sleep(60000);
+          return true;
+        },
+      },
+    })),
+    apis
+  ),
+  {}
+);
 
 const gitlabHelper = new GitlabHelper(gitlabApi, settings.gitlab);
 const githubHelper = new GithubHelper(
-  githubApi,
+  githubApis,
   settings.github,
   gitlabHelper,
   settings.useIssuesForAllMergeRequests

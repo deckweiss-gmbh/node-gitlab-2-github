@@ -1,5 +1,5 @@
 import settings from '../settings';
-import { GithubSettings } from './settings';
+import { GithubSettings, Token } from './settings';
 import * as utils from './utils';
 import { Octokit as GitHubApi, RestEndpointMethodTypes } from '@octokit/rest';
 import { Endpoints } from '@octokit/types';
@@ -57,10 +57,10 @@ export interface SimpleMilestone {
 }
 
 export class GithubHelper {
-  githubApi: GitHubApi;
+  githubApis: { [key: string]: GitHubApi };
   githubUrl: string;
   githubOwner: string;
-  githubToken: string;
+  githubTokens: Token[];
   githubRepo: string;
   githubTimeout?: number;
   gitlabHelper: GitlabHelper;
@@ -70,17 +70,17 @@ export class GithubHelper {
   milestoneMap?: Map<number, SimpleMilestone>;
 
   constructor(
-    githubApi: GitHubApi,
+    githubApis: { [key: string]: GitHubApi },
     githubSettings: GithubSettings,
     gitlabHelper: GitlabHelper,
     useIssuesForAllMergeRequests: boolean
   ) {
-    this.githubApi = githubApi;
+    this.githubApis = githubApis;
     this.githubUrl = githubSettings.baseUrl
       ? githubSettings.baseUrl
       : gitHubLocation;
     this.githubOwner = githubSettings.owner;
-    this.githubToken = githubSettings.token;
+    this.githubTokens = githubSettings.tokens;
     this.githubRepo = githubSettings.repo;
     this.githubTimeout = githubSettings.timeout;
     this.gitlabHelper = gitlabHelper;
@@ -100,7 +100,7 @@ export class GithubHelper {
   async registerRepoId() {
     try {
       await utils.sleep(this.delayInMs);
-      let result = await this.githubApi.repos.get({
+      let result = await this.getDefaultGitHubApi().repos.get({
         owner: this.githubOwner,
         repo: this.githubRepo,
       });
@@ -122,7 +122,7 @@ export class GithubHelper {
     try {
       await utils.sleep(this.delayInMs);
       // get an array of GitHub milestones for the new repo
-      let result = await this.githubApi.issues.listMilestones({
+      let result = await this.getDefaultGitHubApi().issues.listMilestones({
         owner: this.githubOwner,
         repo: this.githubRepo,
         state: 'all',
@@ -150,7 +150,7 @@ export class GithubHelper {
     while (true) {
       await utils.sleep(this.delayInMs);
       // get a paginated list of issues
-      const issues = await this.githubApi.issues.listForRepo({
+      const issues = await this.getDefaultGitHubApi().issues.listForRepo({
         owner: this.githubOwner,
         repo: this.githubRepo,
         state: 'all',
@@ -184,7 +184,7 @@ export class GithubHelper {
     try {
       await utils.sleep(this.delayInMs);
       // get an array of GitHub labels for the new repo
-      let result = await this.githubApi.issues.listLabelsForRepo({
+      let result = await this.getDefaultGitHubApi().issues.listLabelsForRepo({
         owner: this.githubOwner,
         repo: this.githubRepo,
       });
@@ -211,7 +211,7 @@ export class GithubHelper {
     try {
       await utils.sleep(this.delayInMs);
       // get an existing release by tag name in github
-      let result = await this.githubApi.repos.getReleaseByTag({
+      let result = await this.getDefaultGitHubApi().repos.getReleaseByTag({
         owner: this.githubOwner,
         repo: this.githubRepo,
         tag: tag,
@@ -236,7 +236,7 @@ export class GithubHelper {
     try {
       await utils.sleep(this.delayInMs);
       // get an array of GitHub labels for the new repo
-      let result = await this.githubApi.repos.createRelease({
+      let result = await this.getDefaultGitHubApi().repos.createRelease({
         owner: this.githubOwner,
         repo: this.githubRepo,
         tag_name,
@@ -266,7 +266,7 @@ export class GithubHelper {
     while (true) {
       await utils.sleep(this.delayInMs);
       // get a paginated list of pull requests
-      const pullRequests = await this.githubApi.pulls.list({
+      const pullRequests = await this.getDefaultGitHubApi().pulls.list({
         owner: this.githubOwner,
         repo: this.githubRepo,
         state: 'all',
@@ -298,13 +298,15 @@ export class GithubHelper {
    ******************************** POST METHODS ********************************
    ******************************************************************************
    */
-  userIsCreator(author: GitLabUser) {
+  userTokenAvailable(author: GitLabUser) {
     return (
       author &&
       ((settings.usermap &&
-        settings.usermap[author.username as string] ===
-          settings.github.token_owner) ||
-        author.username === settings.github.token_owner)
+        this.githubApis[settings.usermap[author.username as string]]) ||
+        // settings.usermap[author.username as string] ===
+        //   settings.github.token_owner) ||
+        this.githubApis[author.username as string])
+      //author.username === settings.github.token_owner)
     );
   }
 
@@ -319,7 +321,7 @@ export class GithubHelper {
       repo: this.githubRepo,
       description: description.replace(/\s+/g, ' '),
     };
-    return this.githubApi.repos.update(props);
+    return this.getDefaultGitHubApi().repos.update(props);
   }
 
   /**
@@ -331,7 +333,7 @@ export class GithubHelper {
     let bodyConverted = await this.convertIssuesAndComments(
       issue.description ?? '',
       issue,
-      !this.userIsCreator(issue.author) || !issue.description
+      !this.userTokenAvailable(issue.author) || !issue.description
     );
 
     let props: RestEndpointMethodTypes['issues']['create']['parameters'] = {
@@ -349,7 +351,7 @@ export class GithubHelper {
 
     if (settings.debug) return Promise.resolve({ data: issue });
 
-    return this.githubApi.issues.create(props);
+    return this.getUserGitHubApi(issue.author).issues.create(props);
   }
 
   /**
@@ -432,7 +434,7 @@ export class GithubHelper {
       : await this.convertIssuesAndComments(
           issue.description ?? '',
           issue,
-          !this.userIsCreator(issue.author) || !issue.description
+          !this.userTokenAvailable(issue.author) || !issue.description
         );
 
     let props: IssueImport = {
@@ -467,7 +469,11 @@ export class GithubHelper {
       comments = await this.processNotesIntoComments(notes);
     }
 
-    const issue_number = await this.requestImportIssue(props, comments);
+    const issue_number = await this.requestImportIssue(
+      issue.author,
+      props,
+      comments
+    );
 
     if (assignees.length > 1 && issue_number) {
       if (assignees.length > 10) {
@@ -479,7 +485,7 @@ export class GithubHelper {
           `Importing ${assignees.length} assignees for GitHub issue #${issue_number}`
         );
       }
-      this.githubApi.issues.addAssignees({
+      this.getDefaultGitHubApi().issues.addAssignees({
         owner: this.githubOwner,
         repo: this.githubRepo,
         issue_number: issue_number,
@@ -510,11 +516,11 @@ export class GithubHelper {
     for (let note of notes) {
       if (this.checkIfNoteCanBeSkipped(note.body)) continue;
 
-      let userIsPoster =
-        (settings.usermap &&
-          settings.usermap[note.author.username] ===
-            settings.github.token_owner) ||
-        note.author.username === settings.github.token_owner;
+      let userIsPoster = this.userTokenAvailable(note.author);
+      // (settings.usermap &&
+      //   settings.usermap[note.author.username] ===
+      //     settings.github.token_owner) ||
+      // note.author.username === settings.github.token_owner;
 
       comments.push({
         created_at: note.created_at,
@@ -543,11 +549,12 @@ export class GithubHelper {
    * @returns GitHub issue number or null if import failed
    */
   async requestImportIssue(
+    author: GitLabUser,
     issue: IssueImport,
     comments: CommentImport[]
   ): Promise<number | null> {
     // create the GitHub issue from the GitLab issue
-    let pending = await this.githubApi.request(
+    let pending = await this.getUserGitHubApi(author).request(
       `POST /repos/${settings.github.owner}/${settings.github.repo}/import/issues`,
       {
         issue: issue,
@@ -558,7 +565,7 @@ export class GithubHelper {
     let result = null;
     while (true) {
       await utils.sleep(this.delayInMs);
-      result = await this.githubApi.request(
+      result = await this.getUserGitHubApi(author).request(
         `GET /repos/${settings.github.owner}/${settings.github.repo}/import/issues/${pending.data.id}`
       );
       if (
@@ -640,7 +647,7 @@ export class GithubHelper {
       /^Added ~.* label/i.test(noteBody) ||
       /^removed ~.* label/i.test(noteBody) ||
       /^mentioned in issue #\d+.*/i.test(noteBody) ||
-      // /^marked this issue as related to #\d+/i.test(noteBody) ||
+      /^marked this issue as related to #\d+/i.test(noteBody) ||
       /^mentioned in merge request !\d+/i.test(noteBody) ||
       /^changed the description.*/i.test(noteBody) ||
       /^changed title from.*to.*/i.test(noteBody);
@@ -666,14 +673,18 @@ export class GithubHelper {
   ) {
     if (this.checkIfNoteCanBeSkipped(note.body)) return false;
 
-    let bodyConverted = await this.convertIssuesAndComments(note.body, note);
+    let bodyConverted = await this.convertIssuesAndComments(
+      note.body,
+      note,
+      !this.userTokenAvailable(note.author)
+    );
 
     await utils.sleep(this.delayInMs);
 
     if (settings.debug) return true;
 
-    await this.githubApi.issues
-      .createComment({
+    await this.getUserGitHubApi(note.author)
+      .issues.createComment({
         owner: this.githubOwner,
         repo: this.githubRepo,
         issue_number: githubIssue.number,
@@ -707,7 +718,7 @@ export class GithubHelper {
 
     if (settings.debug) return Promise.resolve();
 
-    return await this.githubApi.issues.update(props);
+    return await this.getUserGitHubApi(issue.author).issues.update(props);
   }
 
   // ----------------------------------------------------------------------------
@@ -742,7 +753,7 @@ export class GithubHelper {
 
     if (settings.debug) return Promise.resolve({ number: -1, title: 'DEBUG' });
 
-    const created = await this.githubApi.issues.createMilestone(
+    const created = await this.getDefaultGitHubApi().issues.createMilestone(
       githubMilestone
     );
 
@@ -767,7 +778,7 @@ export class GithubHelper {
 
     if (settings.debug) return Promise.resolve();
     // create the GitHub label
-    return await this.githubApi.issues.createLabel(githubLabel);
+    return await this.getDefaultGitHubApi().issues.createLabel(githubLabel);
   }
 
   // ----------------------------------------------------------------------------
@@ -816,7 +827,7 @@ export class GithubHelper {
     if (canCreate) {
       // Check to see if the target branch exists in GitHub - if it does not exist, we cannot create a pull request
       try {
-        await this.githubApi.repos.getBranch({
+        await this.getDefaultGitHubApi().repos.getBranch({
           owner: this.githubOwner,
           repo: this.githubRepo,
           branch: mergeRequest.target_branch,
@@ -841,7 +852,7 @@ export class GithubHelper {
     if (canCreate) {
       // Check to see if the source branch exists in GitHub - if it does not exist, we cannot create a pull request
       try {
-        await this.githubApi.repos.getBranch({
+        await this.getDefaultGitHubApi().repos.getBranch({
           owner: this.githubOwner,
           repo: this.githubRepo,
           branch: mergeRequest.source_branch,
@@ -868,7 +879,8 @@ export class GithubHelper {
     if (canCreate) {
       let bodyConverted = await this.convertIssuesAndComments(
         mergeRequest.description,
-        mergeRequest
+        mergeRequest,
+        !this.userTokenAvailable(mergeRequest.author)
       );
 
       // GitHub API Documentation to create a pull request: https://developer.github.com/v3/pulls/#create-a-pull-request
@@ -885,7 +897,7 @@ export class GithubHelper {
 
       try {
         // try to create the GitHub pull request from the GitLab issue
-        await this.githubApi.pulls.create(props);
+        await this.getUserGitHubApi(mergeRequest.author).pulls.create(props);
         return Promise.resolve({ data: null }); // need to return null promise for parent to wait on
       } catch (err) {
         if (err.status === 422) {
@@ -910,7 +922,8 @@ export class GithubHelper {
     let bodyConverted = await this.convertIssuesAndComments(
       mergeStr + mergeRequest.description,
       mergeRequest,
-      !this.userIsCreator(mergeRequest.author) || !settings.useIssueImportAPI
+      !this.userTokenAvailable(mergeRequest.author) // ||
+      //!settings.useIssueImportAPI
     );
 
     if (settings.useIssueImportAPI) {
@@ -941,7 +954,7 @@ export class GithubHelper {
         comments = await this.processNotesIntoComments(notes);
       }
 
-      return this.requestImportIssue(props, comments);
+      return this.requestImportIssue(mergeRequest.author, props, comments);
     } else {
       let props = {
         owner: this.githubOwner,
@@ -955,7 +968,7 @@ export class GithubHelper {
       if (!mergeRequest.labels) mergeRequest.labels = [];
       mergeRequest.labels.push('gitlab merge request');
 
-      return this.githubApi.issues.create(props);
+      return this.getUserGitHubApi(mergeRequest.author).issues.create(props);
     }
   }
 
@@ -1030,7 +1043,9 @@ export class GithubHelper {
     props.milestone = this.convertMilestone(mergeRequest);
     props.labels = this.convertLabels(mergeRequest);
 
-    return await this.githubApi.issues.update(props);
+    return await this.getUserGitHubApi(mergeRequest.author).issues.update(
+      props
+    );
   }
 
   // ----------------------------------------------------------------------------
@@ -1073,7 +1088,9 @@ export class GithubHelper {
 
     // Use the Issues API; all pull requests are issues, and we're not modifying any pull request-sepecific fields. This
     // then works for merge requests that cannot be created and are migrated as issues.
-    return await this.githubApi.issues.update(props);
+    return await this.getUserGitHubApi(mergeRequest.author).issues.update(
+      props
+    );
   }
 
   // ----------------------------------------------------------------------------
@@ -1391,7 +1408,7 @@ export class GithubHelper {
 
     try {
       console.log(`Deleting repo ${params.owner}/${params.repo}...`);
-      await this.githubApi.repos.delete(params);
+      await this.getDefaultGitHubApi().repos.delete(params);
       console.log('\t...done.');
     } catch (err) {
       if (err.status == 404) console.log(' not found.');
@@ -1399,7 +1416,7 @@ export class GithubHelper {
     }
     try {
       console.log(`Creating repo ${params.owner}/${params.repo}...`);
-      await this.githubApi.repos.createForAuthenticatedUser({
+      await this.getDefaultGitHubApi().repos.createForAuthenticatedUser({
         name: this.githubRepo,
         private: true,
       });
@@ -1408,5 +1425,18 @@ export class GithubHelper {
       console.error(`\n\tSomething went wrong: ${err}.`);
     }
     await utils.sleep(this.delayInMs);
+  }
+
+  getDefaultGitHubApi(): GitHubApi {
+    return Object.values(this.githubApis)[0];
+  }
+
+  getUserGitHubApi(author: GitLabUser): GitHubApi {
+    return (
+      this.githubApis[
+        settings.usermap[author.username as string] ||
+          (author.username as string)
+      ] || this.getDefaultGitHubApi()
+    );
   }
 }

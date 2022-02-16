@@ -2,32 +2,66 @@ import Settings from './src/settings';
 
 export default {
   gitlab: {
-    // url: 'https://gitlab.mycompany.com',
-    token: '{{gitlab private token}}',
-    projectId: null,
-    sessionCookie: null,
+    url: 'https://git.deckweiss.at',
+    token: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+    projectId: 82,
+    sessionCookie: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
   github: {
-    // baseUrl: 'https://github.mycompany.com:123/etc',
-    // apiUrl: 'https//api.github.mycompany.com',
-    owner: '{{repository owner (user or organization)}}',
-    token: '{{token}}',
-    token_owner: '{{token_owner}}',
-    repo: '{{repo}}',
+    //baseUrl: 'https://github.mycompany.com:123/etc',
+    //apiUrl: 'https//api.github.com',
+    owner: 'deckweiss-gmbh',
+    tokens: [
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'alfredbotworth',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'valentinschabschneider',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'alexanderbetz',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'daniellampl',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'valentinjaech',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'simonhell',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'danielsteinkogler',
+      },
+      {
+        value: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
+        owner: 'kevin-baumgartner',
+      },
+    ],
+    repo: 'sportogo',
     recreateRepo: false,
   },
-  s3: {
-    accessKeyId: '{{accessKeyId}}',
-    secretAccessKey: '{{secretAccessKey}}',
-    bucket: 'my-gitlab-bucket',
-  },
+  // s3: {
+  //   accessKeyId: '{{accessKeyId}}',
+  //   secretAccessKey: '{{secretAccessKey}}',
+  //   bucket: 'my-gitlab-bucket',
+  // },
   usermap: {
-    'username.gitlab.1': 'username.github.1',
-    'username.gitlab.2': 'username.github.2',
+    'alexander.betz': 'alexanderbetz',
+    Vla: 'valentinjaech',
+    kevinbaumgartner: 'kevin-baumgartner',
+    TheStoani: 'danielsteinkogler',
   },
   projectmap: {
-    'gitlabgroup/projectname.1': 'GitHubOrg/projectname.1',
-    'gitlabgroup/projectname.2': 'GitHubOrg/projectname.2',
+    'deckweissgroup/frontend-skeleton': 'deckweiss-gmbh/frontend-skeleton',
+    'deckweissgroup/sportogo': 'deckweiss-gmbh/sportogo',
   },
   conversion: {
     useLowerCaseLabels: true,
@@ -41,7 +75,7 @@ export default {
     releases: true,
   },
   debug: false,
-  useIssueImportAPI: true,
+  useIssueImportAPI: false,
   usePlaceholderMilestonesForMissingMilestones: true,
   usePlaceholderIssuesForMissingIssues: true,
   useReplacementIssuesForCreationFails: true,
