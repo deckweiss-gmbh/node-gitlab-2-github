@@ -4,7 +4,7 @@ export default {
   gitlab: {
     url: 'https://git.deckweiss.at',
     token: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
-    projectId: 82,
+    projectId: xx,
     sessionCookie: 'xxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
   github: {
